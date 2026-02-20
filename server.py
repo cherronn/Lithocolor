@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from flask import Flask, render_template, request, send_file
 from PIL import Image
 
+Image.MAX_IMAGE_PIXELS = 100_000_000
+
 from lithocolor_core import image_to_heightmap
 
 app = Flask(__name__)
