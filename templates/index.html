@@ -1,0 +1,209 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>RGB to Lithocolor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg: #ffffff;
+      --panel: rgba(0,0,0,0.88);
+      --panel2: rgba(0,0,0,0.94);
+      --text: rgba(255,255,255,0.95);
+      --muted: rgba(255,255,255,0.70);
+      --stroke: rgba(255,255,255,0.16);
+      --shadow: 0 18px 50px rgba(2,6,23,0.18);
+      --radius: 20px;
+      --pageText: #0f172a;
+      --pageMuted: rgba(15,23,42,0.65);
+    }
+
+    * { box-sizing: border-box; }
+
+    body{
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      color: var(--pageText);
+      font-size: 24px; /* 🔥 bigger base font */
+    }
+
+    .wrap{
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 40px 20px 70px;
+    }
+
+    .brand h1{
+      margin: 0;
+      font-size: 62px; /* 🔥 bigger heading */
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--pageText);
+    }
+
+    .brand p{
+      margin: 10px 0 0;
+      font-size: 26px;
+      color: var(--pageMuted);
+    }
+
+    .card{
+      background: linear-gradient(180deg, var(--panel2), var(--panel));
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 30px;
+      margin-top: 22px;
+      color: var(--text);
+    }
+
+    .toolbar{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+    }
+
+    .filebox{
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    input[type="file"]{
+      font-size: 22px;
+      color: var(--muted);
+    }
+
+    .btn{
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.10);
+      color: var(--text);
+      padding: 20px 32px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: 800;
+      font-size: 22px;
+    }
+
+    .btn:hover{
+      background: rgba(255,255,255,0.18);
+    }
+
+    .btn-primary{
+      background: rgba(34,197,94,0.22);
+    }
+
+    .grid{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .panel-title{
+      margin: 0 0 14px;
+      font-size: 26px; /* 🔥 bigger section titles */
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .imgbox{
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.08);
+      padding: 14px;
+    }
+
+    .imgbox img{
+      width: 100%;
+      border-radius: 18px;
+      background: white;
+    }
+
+    details{
+      margin-top: 22px;
+      border-radius: var(--radius);
+      border: 1px solid var(--stroke);
+      background: linear-gradient(180deg, var(--panel2), var(--panel));
+      padding: 10px 0;
+    }
+
+    summary{
+      cursor: pointer;
+      padding: 14px 22px;
+      font-weight: 900;
+      font-size: 24px;
+      color: var(--text);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+
+    <div class="brand">
+      <h1>RGB to Lithocolor</h1>
+      <p>Upload an image to generate a Lithocolor map. Histogram is optional for quick QC.</p>
+    </div>
+
+    <div class="card">
+      <form action="./generate" method="post" enctype="multipart/form-data">
+        <div class="toolbar">
+          <div class="filebox">
+            <input type="file" name="image" accept="image/*" required>
+            <button class="btn btn-primary" type="submit">Generate</button>
+          </div>
+
+          {% if heightmap_b64 %}
+          <div class="filebox">
+            <a class="btn"
+               download="lithocolor.png"
+               href="data:image/png;base64,{{ heightmap_b64 }}">
+               Download Lithocolor
+            </a>
+
+            <a class="btn"
+               download="lithocolor_histogram.png"
+               href="data:image/png;base64,{{ hist_b64 }}">
+               Download Histogram
+            </a>
+          </div>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+
+    {% if original_b64 %}
+      <div class="grid">
+        <div class="card">
+          <div class="panel-title">Original</div>
+          <div class="imgbox">
+            <img src="data:image/png;base64,{{ original_b64 }}" alt="Original uploaded image">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-title">Lithocolor</div>
+          <div class="imgbox">
+            <img src="data:image/png;base64,{{ heightmap_b64 }}" alt="Generated Lithocolor image">
+          </div>
+        </div>
+      </div>
+
+      <details>
+        <summary>Advanced: Histogram</summary>
+        <div class="imgbox">
+          <img src="data:image/png;base64,{{ hist_b64 }}" alt="Histogram of Lithocolor values">
+        </div>
+      </details>
+    {% endif %}
+
+  </div>
+</body>
+</html>

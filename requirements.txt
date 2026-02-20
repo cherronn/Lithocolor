@@ -1,0 +1,5 @@
+flask
+gunicorn
+Pillow
+numpy
+matplotlib
