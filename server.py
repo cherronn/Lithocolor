@@ -1,54 +1,32 @@
 import io
 import base64
 import os
-from werkzeug.utils import secure_filename
 
 import matplotlib
 matplotlib.use("Agg")  # required for servers (no display)
-
 import matplotlib.pyplot as plt
+
 from flask import Flask, render_template, request, send_file
-from PIL import Image
+from werkzeug.utils import secure_filename
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from lithocolor_core import image_to_heightmap
 
-# Render Free friendly limits
-MAX_MEGA_PIXELS = 25  # 25 MP is safe on 512 MB
-MAX_PIXELS = MAX_MEGA_PIXELS * 1_000_000
-MAX_EDGE = 6000       # cap longest side
-
-# Allow loading, but we will downscale ourselves
-Image.MAX_IMAGE_PIXELS = 100_000_000
-
-
-def _load_and_shrink(upload) -> Image.Image:
-    """
-    Load an uploaded image safely and downscale it to avoid memory/timeouts.
-    Returns an RGB PIL Image.
-    """
-    img = Image.open(upload.stream)
-    img = img.convert("RGB")
-
-    w, h = img.size
-    pixels = w * h
-
-    # If either dimension is too large, downscale by edge first
-    if max(w, h) > MAX_EDGE:
-        img.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
-        w, h = img.size
-        pixels = w * h
-
-    # If still too many pixels, scale down by area
-    if pixels > MAX_PIXELS:
-        scale = (MAX_PIXELS / float(pixels)) ** 0.5
-        new_w = max(1, int(w * scale))
-        new_h = max(1, int(h * scale))
-        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    return img
-
-
 app = Flask(__name__)
+
+# ---------- Limits (Render free tier friendly) ----------
+# Upload size cap (compressed file size). Adjust if you want.
+# 10 MB is a reasonable default for Render free.
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # 10 MB
+
+# Pixel / memory caps (this is what actually matters for crashes/DDOS warnings)
+MAX_MEGA_PIXELS = 25               # ~safe on 512 MB
+MAX_PIXELS = MAX_MEGA_PIXELS * 1_000_000
+MAX_EDGE = 6000                    # cap longest side
+
+# Pillow "decompression bomb" protection threshold (pixel-based)
+# Keep this high enough to allow large images, but we still downscale immediately.
+Image.MAX_IMAGE_PIXELS = 200_000_000
 
 
 def _out_name(uploaded_filename: str, suffix: str, ext: str) -> str:
@@ -66,18 +44,68 @@ def _img_bytes_to_b64(png_bytes: bytes) -> str:
     return base64.b64encode(png_bytes).decode("utf-8")
 
 
+def _load_and_shrink(upload) -> Image.Image:
+    """
+    Load an uploaded image safely and downscale it to avoid memory/timeouts.
+    Returns an RGB PIL Image.
+    """
+    try:
+        img = Image.open(upload.stream)
+    except UnidentifiedImageError:
+        raise ValueError("Unsupported or corrupted image file.")
+
+    # Respect EXIF orientation (common with phone photos)
+    img = ImageOps.exif_transpose(img)
+
+    # Ensure we can read pixels now (catches some truncated/corrupt files early)
+    img.load()
+
+    # Normalize format
+    img = img.convert("RGB")
+
+    w, h = img.size
+    pixels = w * h
+
+    # First cap by longest edge
+    if max(w, h) > MAX_EDGE:
+        img.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
+        w, h = img.size
+        pixels = w * h
+
+    # Then cap by total pixels
+    if pixels > MAX_PIXELS:
+        scale = (MAX_PIXELS / float(pixels)) ** 0.5
+        new_w = max(1, int(w * scale))
+        new_h = max(1, int(h * scale))
+        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    return img
+
+
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
 
 
-@app.route("/generate", methods=["POST"])
+@app.route("/generate", methods=["GET", "POST"])
 def generate():
+    # Allow /generate to be visited directly (GET)
+    if request.method == "GET":
+        return render_template("index.html")
+
     if "image" not in request.files:
         return "No file uploaded", 400
 
     f = request.files["image"]
-    img = _load_and_shrink(f)
+    if not f or not f.filename:
+        return "No file uploaded", 400
+
+    try:
+        img = _load_and_shrink(f)
+    except ValueError as e:
+        return str(e), 400
+    except Exception:
+        return "Failed to process image.", 400
 
     hm = image_to_heightmap(img)
     hm_img = Image.fromarray(hm, mode="L")
@@ -119,7 +147,15 @@ def download_heightmap():
         return "No file uploaded", 400
 
     f = request.files["image"]
-    img = _load_and_shrink(f)
+    if not f or not f.filename:
+        return "No file uploaded", 400
+
+    try:
+        img = _load_and_shrink(f)
+    except ValueError as e:
+        return str(e), 400
+    except Exception:
+        return "Failed to process image.", 400
 
     hm = image_to_heightmap(img)
     hm_img = Image.fromarray(hm, mode="L")
@@ -127,6 +163,7 @@ def download_heightmap():
     buf = io.BytesIO()
     hm_img.save(buf, format="PNG")
     buf.seek(0)
+
     return send_file(
         buf,
         mimetype="image/png",
@@ -141,7 +178,15 @@ def download_histogram():
         return "No file uploaded", 400
 
     f = request.files["image"]
-    img = _load_and_shrink(f)
+    if not f or not f.filename:
+        return "No file uploaded", 400
+
+    try:
+        img = _load_and_shrink(f)
+    except ValueError as e:
+        return str(e), 400
+    except Exception:
+        return "Failed to process image.", 400
 
     hm = image_to_heightmap(img)
 
@@ -156,6 +201,7 @@ def download_histogram():
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=200)
     plt.close(fig)
     buf.seek(0)
+
     return send_file(
         buf,
         mimetype="image/png",
